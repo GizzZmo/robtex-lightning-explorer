@@ -10,13 +10,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Primary runtime matches package.json engines (>=20).
-# Note: `env` cannot be used in job-level `name:` — only in steps / with: / run:.
 env:
   PRIMARY_NODE: "20"
 
 jobs:
-  # Fast path: typecheck + build + smoke on the supported baseline.
   quality:
     name: Quality (Node 20)
     runs-on: ubuntu-latest
@@ -32,7 +29,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
@@ -61,7 +58,6 @@ jobs:
           path: dist/
           retention-days: 7
 
-  # Compatibility matrix runs only after quality passes, and only on main.
   compatibility:
     name: Compat Node ${{ matrix.node-version }}
     needs: quality
@@ -72,7 +68,6 @@ jobs:
       fail-fast: true
       matrix:
         node-version: [22]
-        # Extend when needed, e.g. [22, 24]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,7 +79,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
