@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robtex Lightning & Bitcoin Explorer</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --border: #1e2a3a;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #f7931a;
+      --ln: #7b61ff;
+      --ok: #3dd68c;
+      --err: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1a1030 0%, transparent 50%),
+                  radial-gradient(900px 500px at 100% 0%, #1a1208 0%, transparent 45%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.5rem 1.25rem 0.5rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    h1 span.ln { color: var(--ln); }
+    h1 span.btc { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-top: 0.35rem; }
+    main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
+    .tabs {
+      display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 1.25rem 0 1rem;
+    }
+    .tab {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .tab.active {
+      color: var(--text);
+      border-color: var(--ln);
+      box-shadow: 0 0 0 1px rgba(123,97,255,0.35);
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem;
+    }
+    .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    input, select {
+      flex: 1;
+      min-width: 180px;
+      background: #0d1219;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.65rem 0.8rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+    button {
+      background: linear-gradient(135deg, var(--ln), #5a3fd4);
+      border: none;
+      color: white;
+      padding: 0.65rem 1.1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    button.btc {
+      background: linear-gradient(135deg, var(--accent), #c97812);
+    }
+    #out {
+      margin-top: 1rem;
+      background: #0d1219;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      overflow: auto;
+      max-height: 65vh;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .status { margin-top: 0.6rem; font-size: 0.85rem; color: var(--muted); }
+    .status.err { color: var(--err); }
+    .status.ok { color: var(--ok); }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="ln">Lightning</span> · <span class="btc">Bitcoin</span> Explorer</h1>
+    <p class="sub">Powered by Robtex API — node/channel lookup, peers, recent channels, address &amp; tx enrichment</p>
+  </header>
+  <main>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-mode="node">Node</button>
+      <button class="tab" data-mode="search">Search alias</button>
+      <button class="tab" data-mode="peers">Peers</button>
+      <button class="tab" data-mode="recent">Recent channels</button>
+      <button class="tab" data-mode="channel">Channel</button>
+      <button class="tab" data-mode="address">BTC address</button>
+      <button class="tab" data-mode="tx">BTC tx</button>
+    </div>
+
+    <div class="panel">
+      <div class="row" id="form-row">
+        <input id="q" placeholder="Node public key (66 hex)" autocomplete="off" />
+        <button id="go">Lookup</button>
+      </div>
+      <p class="hint" id="hint">Enter a 66-character Lightning node public key.</p>
+      <div class="status" id="status"></div>
+      <pre id="out">Results will appear here…</pre>
+    </div>
+  </main>
+
+  <script>
+    const modes = {
+      node: {
+        placeholder: 'Node public key (66 hex)',
+        hint: 'Enter a 66-character Lightning node public key.',
+        path: (v) => `/api/node/${encodeURIComponent(v)}`,
+        btn: 'Lookup node',
+      },
+      search: {
+        placeholder: 'Node alias (e.g. ACINQ)',
+        hint: 'Partial alias match across Lightning nodes.',
+        path: (v) => `/api/search?alias=${encodeURIComponent(v)}`,
+        btn: 'Search',
+      },
+      peers: {
+        placeholder: 'Node public key',
+        hint: 'Recommended peers for the given node.',
+        path: (v) => `/api/peers/${encodeURIComponent(v)}`,
+        btn: 'Get peers',
+      },
+      recent: {
+        placeholder: 'Count (default 15)',
+        hint: 'Most recently opened Lightning channels.',
+        path: (v) => `/api/recent?count=${encodeURIComponent(v || '15')}`,
+        btn: 'Load recent',
+        allowEmpty: true,
+      },
+      channel: {
+        placeholder: 'Channel ID (e.g. 936795x1154x0)',
+        hint: 'Short channel ID in blockxtxn:vout or colon form.',
+        path: (v) => `/api/channel/${encodeURIComponent(v)}`,
+        btn: 'Lookup channel',
+      },
+      address: {
+        placeholder: 'Bitcoin address',
+        hint: 'Balance, type, first/last seen, ransomware/abuse flags.',
+        path: (v) => `/api/address/${encodeURIComponent(v)}`,
+        btn: 'Enrich address',
+        btc: true,
+      },
+      tx: {
+        placeholder: 'Transaction ID (txid)',
+        hint: 'Full tx details + Lightning channel correlation when present.',
+        path: (v) => `/api/tx/${encodeURIComponent(v)}`,
+        btn: 'Enrich tx',
+        btc: true,
+      },
+    };
+
+    let mode = 'node';
+    const q = document.getElementById('q');
+    const go = document.getElementById('go');
+    const out = document.getElementById('out');
+    const status = document.getElementById('status');
+    const hint = document.getElementById('hint');
+
+    document.getElementById('tabs').addEventListener('click', (e) => {
+      const t = e.target.closest('.tab');
+      if (!t) return;
+      document.querySelectorAll('.tab').forEach((el) => el.classList.remove('active'));
+      t.classList.add('active');
+      mode = t.dataset.mode;
+      const m = modes[mode];
+      q.placeholder = m.placeholder;
+      hint.textContent = m.hint;
+      go.textContent = m.btn;
+      go.classList.toggle('btc', !!m.btc);
+      status.textContent = '';
+    });
+
+    async function run() {
+      const m = modes[mode];
+      const v = q.value.trim();
+      if (!v && !m.allowEmpty) {
+        status.className = 'status err';
+        status.textContent = 'Please enter a value.';
+        return;
+      }
+      go.disabled = true;
+      status.className = 'status';
+      status.textContent = 'Fetching from Robtex…';
+      out.textContent = '';
+      try {
+        const res = await fetch(m.path(v));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        out.textContent = JSON.stringify(data, null, 2);
+        status.className = 'status ok';
+        status.textContent = 'OK';
+      } catch (err) {
+        status.className = 'status err';
+        status.textContent = err.message || String(err);
+        out.textContent = '';
+      } finally {
+        go.disabled = false;
+      }
+    }
+
+    go.addEventListener('click', run);
+    q.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') run();
+    });
+  </script>
+</body>
+</html>
