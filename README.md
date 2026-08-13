@@ -7,7 +7,7 @@
 
 Unique differentiator: combine classic Lightning node/channel intelligence with Bitcoin address & transaction enrichment from the same data source Robtex has maintained for decades.
 
-**v1.1** — Zod validation, CI, Docker / Render / Fly deploy configs.
+**v1.2** — response cache, CORS, spends/block endpoints, deeper health checks, expanded UI.
 
 ## Features
 
@@ -21,7 +21,10 @@ Unique differentiator: combine classic Lightning node/channel intelligence with 
 | **Channels per node** | List channels belonging to a node |
 | **Bitcoin address** | Balance, type, first/last seen, abuse flags |
 | **Bitcoin transaction** | Inputs, outputs, fee, LN channel correlation |
+| **Tx spends** | Which later txs spent outputs of a given tx |
 | **Address txs** | Paginated transaction history for an address |
+| **Block lookup** | Bitcoin block by height |
+| **Response cache** | In-memory TTL cache (default 60s) |
 | **Zod validation** | Runtime schema checks; types inferred from schemas |
 
 ## Quick Start
@@ -48,6 +51,8 @@ export ROBTEX_API_KEY=your_pro_key
 export ROBTEX_RAPIDAPI_KEY=your_rapidapi_key
 export PORT=3847
 export HOST=0.0.0.0
+export CACHE_TTL_MS=60000   # response cache TTL (ms)
+export CORS_ORIGIN=*        # or a specific origin
 ```
 
 ## Deploy
@@ -59,6 +64,7 @@ docker build -t robtex-ln .
 docker run --rm -p 3847:3847 \
   -e ROBTEX_API_KEY \
   -e ROBTEX_RAPIDAPI_KEY \
+  -e CACHE_TTL_MS=60000 \
   robtex-ln
 # → http://localhost:3847/health
 ```
@@ -105,7 +111,9 @@ robtex-ln channel 936795x1154x0
 robtex-ln channels <pubkey>
 robtex-ln address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
 robtex-ln tx <txid>
+robtex-ln spends <txid>
 robtex-ln address-txs <address>
+robtex-ln block 840000
 robtex-ln ping
 ```
 
@@ -116,6 +124,8 @@ import { createClient, RobtexValidationError } from 'robtex-lightning-explorer';
 
 const client = createClient();
 const node = await client.lookupNode('03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f');
+const spends = await client.transactionSpends('<txid>');
+const block = await client.lookupBlock(840000);
 ```
 
 ## API Endpoints
@@ -130,8 +140,10 @@ const node = await client.lookupNode('03864ef025fde8fb587d989186ce6a4a186895ee44
 | GET | `/api/channels/:pubkey` | Channels of a node |
 | GET | `/api/address/:address` | Bitcoin address |
 | GET | `/api/tx/:txid` | Bitcoin transaction |
+| GET | `/api/tx/:txid/spends` | Output spends of a tx |
 | GET | `/api/address/:address/txs` | Address transactions |
-| GET | `/health` | Health check |
+| GET | `/api/block/:height` | Bitcoin block |
+| GET | `/health` | Health check (+ `?deep=1` pings Robtex) |
 
 ## License
 
