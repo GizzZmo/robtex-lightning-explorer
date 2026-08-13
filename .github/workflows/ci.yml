@@ -26,8 +26,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.PRIMARY_NODE }}
-          # Enable when package-lock.json is committed:
-          # cache: npm
 
       - name: Install dependencies
         run: |
@@ -147,8 +145,9 @@ jobs:
           docker rm -f robtex-ci || true
           exit 1
 
+      # Pin: official release tag (see https://github.com/aquasecurity/trivy-action/releases)
       - name: Run Trivy vulnerability scanner (table)
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: robtex-ln:ci
           format: table
@@ -160,7 +159,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (SARIF)
         if: always()
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: robtex-ln:ci
           format: sarif
@@ -171,7 +170,7 @@ jobs:
           scanners: vuln,secret,misconfig
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always() && github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: always()
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:

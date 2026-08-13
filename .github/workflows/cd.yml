@@ -76,7 +76,6 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=
 
-      # Build locally first so Trivy can scan before any registry push.
       - name: Build image for scan
         uses: docker/build-push-action@v6
         with:
@@ -87,7 +86,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Trivy scan (gate CRITICAL/HIGH)
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: robtex-ln:cd-scan
           format: table
@@ -99,7 +98,7 @@ jobs:
 
       - name: Trivy SARIF report
         if: always()
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: robtex-ln:cd-scan
           format: sarif
