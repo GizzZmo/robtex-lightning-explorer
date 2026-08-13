@@ -4,12 +4,12 @@ export {
   type ClientOptions,
 } from './client.js';
 
+export { RobtexValidationError, parseResponse, tryParseResponse } from './validate.js';
+
 export type {
-  // Shared
   ApiStatus,
   ApiError,
   Pagination,
-  // Lightning
   LightningChannelSummary,
   LightningChannel,
   LatestLightningChannelsResponse,
@@ -19,7 +19,6 @@ export type {
   RecommendedPeersResponse,
   SearchNodesResponse,
   ChannelsPerNodeResponse,
-  // Bitcoin
   BitcoinAddressType,
   BitcoinAddressInfo,
   BitcoinAbuseInfo,
@@ -34,8 +33,33 @@ export type {
   BitcoinTransactionSpendsResponse,
   BitcoinBlock,
   BitcoinBlockResponse,
-  BitcoinBlockchainStatsPoint,
-  BitcoinBlockchainStatsResponse,
-  // Utility
   PingResponse,
-} from './types.js';
+} from './schemas.js';
+
+export {
+  PaginationSchema,
+  ApiErrorSchema,
+  LightningChannelSummarySchema,
+  LightningChannelSchema,
+  LatestLightningChannelsResponseSchema,
+  LightningNodeSchema,
+  LightningNodeSummarySchema,
+  RecommendedPeerSchema,
+  RecommendedPeersResponseSchema,
+  SearchNodesResponseSchema,
+  ChannelsPerNodeResponseSchema,
+  BitcoinAddressInfoSchema,
+  BitcoinAbuseInfoSchema,
+  BitcoinAddressResponseSchema,
+  BitcoinTxInputSchema,
+  BitcoinTxOutputSchema,
+  BitcoinTransactionSchema,
+  BitcoinTransactionResponseSchema,
+  BitcoinAddressTxSummarySchema,
+  BitcoinAddressTransactionsResponseSchema,
+  BitcoinSpendOutputSchema,
+  BitcoinTransactionSpendsResponseSchema,
+  BitcoinBlockSchema,
+  BitcoinBlockResponseSchema,
+  PingResponseSchema,
+} from './schemas.js';

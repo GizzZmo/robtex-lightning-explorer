@@ -2,28 +2,33 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import { createClient } from './client.js';
-import { error, header, prettyObject, printJson, success } from './format.js';
+import { error, header, prettyObject, printJson } from './format.js';
+import { RobtexValidationError } from './validate.js';
 
 const program = new Command();
 
 program
   .name('robtex-ln')
   .description('Lightning Network & Bitcoin explorer powered by Robtex API')
-  .version('1.0.0')
+  .version('1.1.0')
   .option('--json', 'Output raw JSON')
   .option('--api-key <key>', 'Robtex Pro API key')
-  .option('--rapid-key <key>', 'RapidAPI key');
+  .option('--rapid-key <key>', 'RapidAPI key')
+  .option('--no-validate', 'Skip Zod response validation');
 
-function getClient(opts: { apiKey?: string; rapidKey?: string }) {
+function getClient(opts: {
+  apiKey?: string;
+  rapidKey?: string;
+  validate?: boolean;
+}) {
   return createClient({
     apiKey: opts.apiKey ?? process.env.ROBTEX_API_KEY,
     rapidApiKey: opts.rapidKey ?? process.env.ROBTEX_RAPIDAPI_KEY,
+    validate: opts.validate,
   });
 }
 
-async function run<
-  T,
->(
+async function run<T>(
   label: string,
   fn: () => Promise<T>,
   opts: { json?: boolean },
@@ -43,12 +48,22 @@ async function run<
       }
       console.log();
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     spinner?.fail();
-    if (e?.status === 429) {
-      error('Rate limited by Robtex free API. Set ROBTEX_API_KEY / ROBTEX_RAPIDAPI_KEY or wait.');
+    const err = e as { status?: number; message?: string; name?: string };
+    if (e instanceof RobtexValidationError) {
+      error(`${e.message}`);
+      if (!opts.json && e.issues.length) {
+        for (const issue of e.issues.slice(0, 8)) {
+          console.error(`  → ${issue.path.join('.') || '(root)'}: ${issue.message}`);
+        }
+      }
+    } else if (err?.status === 429) {
+      error(
+        'Rate limited by Robtex free API. Set ROBTEX_API_KEY / ROBTEX_RAPIDAPI_KEY or wait.',
+      );
     } else {
-      error(e?.message ?? String(e));
+      error(err?.message ?? String(e));
     }
     process.exitCode = 1;
   }

@@ -4,6 +4,8 @@
 
 Unique differentiator: combine classic Lightning node/channel intelligence with Bitcoin address & transaction enrichment from the same data source Robtex has maintained for decades.
 
+**v1.1** — Zod runtime validation on every API response, schema-inferred types, improved package exports.
+
 ## Features
 
 | Feature | Description |
@@ -17,21 +19,21 @@ Unique differentiator: combine classic Lightning node/channel intelligence with 
 | **Bitcoin address** | Balance, type, first/last seen, abuse flags |
 | **Bitcoin transaction** | Inputs, outputs, fee, LN channel correlation |
 | **Address txs** | Paginated transaction history for an address |
+| **Zod validation** | Runtime schema checks; types inferred from schemas |
 
 ## Quick Start
 
 ```bash
-# Clone
 git clone https://github.com/GizzZmo/robtex-lightning-explorer.git
 cd robtex-lightning-explorer
-
-# Install
 npm install
 
-# Run CLI (dev)
+# CLI (dev)
 npx tsx src/cli.ts --help
+npx tsx src/cli.ts recent --count 5
+npx tsx src/cli.ts search ACINQ
 
-# Or build & install globally
+# Build & link
 npm run build
 npm link
 robtex-ln --help
@@ -41,7 +43,6 @@ robtex-ln --help
 
 ```bash
 # Free tier works with no key (rate-limited ~10 req/hr)
-# For higher limits:
 export ROBTEX_API_KEY=your_pro_key
 # or
 export ROBTEX_RAPIDAPI_KEY=your_rapidapi_key
@@ -50,32 +51,20 @@ export ROBTEX_RAPIDAPI_KEY=your_rapidapi_key
 ## CLI Usage
 
 ```bash
-# Lookup a Lightning node
-robtex-ln node 03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f
-
-# Search nodes by alias
+robtex-ln node <pubkey>
 robtex-ln search ACINQ
-
-# Recommended peers for a node
-robtex-ln peers 03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f
-
-# Latest opened channels
+robtex-ln peers <pubkey>
 robtex-ln recent --count 20
-
-# Lookup a channel
 robtex-ln channel 936795x1154x0
-
-# Channels belonging to a node
-robtex-ln channels 03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f
-
-# Bitcoin address enrichment
+robtex-ln channels <pubkey>
 robtex-ln address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
+robtex-ln tx <txid>
+robtex-ln address-txs <address>
+robtex-ln ping
 
-# Bitcoin transaction
-robtex-ln tx 0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098
-
-# JSON output (for piping)
+# JSON + skip validation if needed
 robtex-ln node <pubkey> --json
+robtex-ln recent --no-validate
 ```
 
 ## Web UI + API Server
@@ -85,21 +74,40 @@ npm run server
 # → http://localhost:3847
 ```
 
-Open the browser for a simple explorer UI. The Express server proxies Robtex so you avoid CORS and can keep API keys server-side.
-
 ## Library Usage
 
 ```ts
-import { createClient } from 'robtex-lightning-explorer';
+import {
+  createClient,
+  RobtexValidationError,
+  type LightningNode,
+  LightningNodeSchema,
+} from 'robtex-lightning-explorer';
 
 const client = createClient();
-// or: createClient({ apiKey: '...' }) / { rapidApiKey: '...' }
+// createClient({ apiKey: '...' })
+// createClient({ rapidApiKey: '...' })
+// createClient({ validate: false }) // skip Zod (not recommended)
 
-const node = await client.lookupNode('03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f');
-const peers = await client.recommendedPeers(node.pubkey);
-const recent = await client.latestChannels(15);
-const addr = await client.lookupAddress('bc1q...');
-const tx = await client.lookupTransaction('txid...');
+try {
+  const node: LightningNode = await client.lookupNode(
+    '03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f',
+  );
+  console.log(node.alias, node.channelcount);
+} catch (e) {
+  if (e instanceof RobtexValidationError) {
+    console.error(e.context, e.issues);
+  }
+  throw e;
+}
+```
+
+Schemas are exported if you want to validate data yourself:
+
+```ts
+import { LightningNodeSchema, parseResponse } from 'robtex-lightning-explorer';
+
+const node = parseResponse(LightningNodeSchema, rawJson, 'my-context');
 ```
 
 ## API Endpoints (local server)
@@ -130,13 +138,16 @@ See [Robtex API docs](https://robtex.com/en/api) and [SDK](https://github.com/ro
 
 ```
 src/
-  client.ts   # Thin wrapper around @robtex/sdk focused on LN + BTC
-  cli.ts      # Commander-based CLI
-  format.ts   # Pretty terminal output
+  schemas.ts  # Zod schemas + z.infer types (source of truth)
+  validate.ts # parseResponse + RobtexValidationError
+  client.ts   # LnExplorerClient (validated Robtex calls)
+  types.ts    # Re-exports for compatibility
+  cli.ts      # Commander CLI
+  format.ts   # Terminal pretty-print
   server.ts   # Express API + static UI
-  index.ts    # Library entry
+  index.ts    # Public package exports
 public/
-  index.html  # Simple explorer frontend
+  index.html  # Explorer frontend
 ```
 
 ## License
