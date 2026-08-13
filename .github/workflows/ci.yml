@@ -10,14 +10,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Primary runtime matches package.json engines (>=20).
+# Note: `env` cannot be used in job-level `name:` — only in steps / with: / run:.
 env:
-  # Primary runtime matches package.json engines (>=20)
   PRIMARY_NODE: "20"
 
 jobs:
-  # Fast path: install once, typecheck + build + smoke on the supported baseline.
+  # Fast path: typecheck + build + smoke on the supported baseline.
   quality:
-    name: Quality (Node ${{ env.PRIMARY_NODE }})
+    name: Quality (Node 20)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -60,9 +61,7 @@ jobs:
           path: dist/
           retention-days: 7
 
-  # Compatibility matrix runs only after quality passes.
-  # On PRs: skip extra runtimes (baseline already covered).
-  # On main: also verify current Node LTS line (22).
+  # Compatibility matrix runs only after quality passes, and only on main.
   compatibility:
     name: Compat Node ${{ matrix.node-version }}
     needs: quality
@@ -74,9 +73,6 @@ jobs:
       matrix:
         node-version: [22]
         # Extend when needed, e.g. [22, 24]
-        # exclude examples:
-        # exclude:
-        #   - node-version: 24
     steps:
       - name: Checkout
         uses: actions/checkout@v4
