@@ -20,7 +20,6 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Gate CD on a fresh quality pass so we never publish a broken image from main alone.
   quality:
     name: Pre-publish quality
     runs-on: ubuntu-latest
@@ -39,13 +38,15 @@ jobs:
           node dist/cli.js --version
 
   publish-image:
-    name: Publish GHCR image
+    name: Scan & publish GHCR image
     needs: quality
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: write
+      security-events: write
+      actions: read
     outputs:
       image: ${{ steps.meta.outputs.tags }}
       digest: ${{ steps.build.outputs.digest }}
@@ -75,7 +76,56 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=
 
-      - name: Build and push
+      # Build locally first so Trivy can scan before any registry push.
+      - name: Build image for scan
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: robtex-ln:cd-scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan (gate CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: robtex-ln:cd-scan
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,secret,misconfig
+
+      - name: Trivy SARIF report
+        if: always()
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: robtex-ln:cd-scan
+          format: sarif
+          output: trivy-cd-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: true
+          vuln-type: os,library
+          scanners: vuln,secret,misconfig
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-cd-results.sarif
+          category: trivy-container-cd
+
+      - name: Upload Trivy SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-cd-sarif
+          path: trivy-cd-results.sarif
+          retention-days: 30
+
+      - name: Build and push to GHCR
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -88,7 +138,7 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### Published image" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Published image (Trivy gate passed)" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
           echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
@@ -99,7 +149,6 @@ jobs:
     needs: publish-image
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Runs when FLY_API_TOKEN is set AND (tag push OR manual dispatch with deploy_fly)
     if: >-
       ${{ secrets.FLY_API_TOKEN != '' && (
         startsWith(github.ref, 'refs/tags/v') ||

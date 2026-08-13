@@ -1,0 +1,3 @@
+# Ignore specific CVE IDs here if needed after review, one per line.
+# Example:
+# CVE-2024-12345

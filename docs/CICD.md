@@ -3,70 +3,81 @@
 ## Overview
 
 ```
-PR / push ──► CI (quality + docker build smoke)
-                 │
-push main ──► CD (re-check quality → publish GHCR)
-                 │
-tag v*    ──► CD + Release notes
-                 │
-optional  ──► Fly.io deploy (FLY_API_TOKEN)
+PR / push ──► CI
+               ├─ Quality (Node 20)
+               ├─ Compat Node 22 (main)
+               └─ Docker build → health → Trivy (fail CRITICAL/HIGH)
+
+push main / tag v* ──► CD
+               ├─ Pre-publish quality
+               ├─ Build image → Trivy gate → push GHCR
+               └─ Optional Fly deploy
+
+tag v* ──► Release
 ```
 
 | Workflow | File | Triggers | Purpose |
 |----------|------|----------|---------|
-| **CI** | `.github/workflows/ci.yml` | PR + push to `main` | Typecheck, build, CLI/server smoke, Docker build (no push), Node 22 compat on main |
-| **CD** | `.github/workflows/cd.yml` | Push `main`, tags `v*`, manual | Publish `ghcr.io/gizzzmo/robtex-lightning-explorer` |
-| **Release** | `.github/workflows/release.yml` | Tags `v*`, manual | GitHub Release + notes |
-| **Dependabot** | `.github/dependabot.yml` | Weekly | npm + Actions updates |
+| **CI** | `.github/workflows/ci.yml` | PR + push `main` | Typecheck, build, smokes, Docker + **Trivy** |
+| **CD** | `.github/workflows/cd.yml` | `main`, `v*`, manual | Trivy gate then publish GHCR |
+| **Release** | `.github/workflows/release.yml` | `v*`, manual | GitHub Release |
+| **Dependabot** | `.github/dependabot.yml` | Weekly | npm + Actions |
 
-## CI jobs
+## Trivy container scanning
 
-1. **Quality (Node 20)** — install, typecheck, build, entrypoints, CLI + HTTP `/health` smoke  
-2. **Compat Node 22** — main only  
-3. **Docker build** — build image and run container health check (does not push)
+Uses [`aquasecurity/trivy-action@0.30.0`](https://github.com/aquasecurity/trivy-action).
 
-## CD jobs
+| Setting | Value |
+|---------|--------|
+| Severity gate | **CRITICAL, HIGH** (`exit-code: 1`) |
+| Unfixed vulns | Ignored (`ignore-unfixed: true`) |
+| Types | `os`, `library` |
+| Scanners | `vuln`, `secret`, `misconfig` |
+| SARIF | Uploaded to **GitHub Security** + Actions artifacts |
 
-1. **Pre-publish quality** — block publish on type/build failure  
-2. **Publish GHCR image** — tags: `latest` (main), branch, semver, short SHA  
-3. **Deploy Fly.io** — only if `FLY_API_TOKEN` is set and (version tag **or** manual dispatch with *Deploy Fly*)
+### CI
 
-### Image
+1. Build `robtex-ln:ci`
+2. Health smoke on `/health`
+3. Trivy table (fails job on CRITICAL/HIGH)
+4. Trivy SARIF → Security tab + `trivy-sarif` artifact
+
+### CD
+
+1. Build `robtex-ln:cd-scan` **before** push
+2. Trivy gate (same severity rules)
+3. SARIF → Security + `trivy-cd-sarif` artifact
+4. Only then push tags to GHCR
+
+### Suppressions
+
+Add reviewed CVE IDs to [`.trivyignore`](../.trivyignore) (one per line).
+
+### Viewing results
+
+- **Actions** job logs (table output)
+- **Security → Code scanning** (SARIF, default branch / non-fork PRs)
+- Workflow **Artifacts** (`trivy-sarif`, `trivy-cd-sarif`)
+
+## Image
 
 ```text
 ghcr.io/gizzzmo/robtex-lightning-explorer:latest
 ghcr.io/gizzzmo/robtex-lightning-explorer:main
 ghcr.io/gizzzmo/robtex-lightning-explorer:<sha>
-ghcr.io/gizzzmo/robtex-lightning-explorer:1.1.0   # from tag v1.1.0
+ghcr.io/gizzzmo/robtex-lightning-explorer:1.1.0
 ```
-
-Package visibility defaults to private for GHCR — set to **Public** under GitHub → Packages if needed.
 
 ## Secrets
 
 | Secret | Required | Used by |
 |--------|----------|---------|
-| `GITHUB_TOKEN` | automatic | GHCR push, releases |
-| `FLY_API_TOKEN` | optional | Fly deploy job |
-
-Add optional app secrets on the host (`ROBTEX_API_KEY`, `ROBTEX_RAPIDAPI_KEY`), not in GitHub unless you inject them at deploy time.
+| `GITHUB_TOKEN` | automatic | GHCR, SARIF upload, releases |
+| `FLY_API_TOKEN` | optional | Fly deploy |
 
 ## Release flow
 
 ```bash
 git tag v1.2.0
 git push origin v1.2.0
-# → CD publishes semver image tags
-# → Release workflow opens a GitHub Release
-```
-
-Or: Actions → **Release** → Run workflow → enter `v1.2.0`.
-
-## Local parity
-
-```bash
-npm install && npm run typecheck && npm run build
-node dist/cli.js --version
-node dist/server.js & curl -sf localhost:3847/health
-docker build -t robtex-ln .
 ```
