@@ -1,10 +1,12 @@
 # Robtex Lightning & Bitcoin Explorer
 
+[![CI](https://github.com/GizzZmo/robtex-lightning-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/GizzZmo/robtex-lightning-explorer/actions/workflows/ci.yml)
+
 **Lightning Network & Bitcoin explorer** powered by the [Robtex API](https://robtex.com).
 
 Unique differentiator: combine classic Lightning node/channel intelligence with Bitcoin address & transaction enrichment from the same data source Robtex has maintained for decades.
 
-**v1.1** — Zod runtime validation on every API response, schema-inferred types, improved package exports.
+**v1.1** — Zod runtime validation on every API response, schema-inferred types, improved package exports, GitHub Actions CI.
 
 ## Features
 
@@ -125,6 +127,17 @@ const node = parseResponse(LightningNodeSchema, rawJson, 'my-context');
 | GET | `/api/address/:address/txs` | Address transactions |
 | GET | `/health` | Health check |
 
+## CI
+
+GitHub Actions runs on every push and PR to `main`:
+
+- Node.js **20** and **22**
+- `npm ci` → `typecheck` → `build`
+- Entrypoint checks (`dist/*.js`, `dist/*.d.ts`)
+- CLI smoke tests (`--help`, `--version`)
+
+Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
 ## Rate Limits
 
 - **Free** (`freeapi.robtex.com`): ~10 requests/hour per IP
@@ -148,6 +161,8 @@ src/
   index.ts    # Public package exports
 public/
   index.html  # Explorer frontend
+.github/
+  workflows/ci.yml
 ```
 
 ## License
