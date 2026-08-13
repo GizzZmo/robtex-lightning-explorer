@@ -1,22 +1,34 @@
-import type { z } from 'zod';
+import { z } from 'zod';
+
+/** Portable issue shape (avoids Zod 3/4 internal path differences). */
+export type ValidationIssue = {
+  path: PropertyKey[];
+  message: string;
+  code?: string;
+};
 
 /**
  * Thrown when Robtex API response fails Zod validation.
  */
 export class RobtexValidationError extends Error {
-  readonly issues: z.core.$ZodIssue[];
+  readonly issues: ValidationIssue[];
   readonly context: string;
   readonly raw: unknown;
 
   constructor(context: string, error: z.ZodError, raw?: unknown) {
-    const summary = error.issues
+    const issues: ValidationIssue[] = error.issues.map((i) => ({
+      path: i.path as PropertyKey[],
+      message: i.message,
+      code: String((i as { code?: string }).code ?? ''),
+    }));
+    const summary = issues
       .slice(0, 5)
       .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
       .join('; ');
     super(`Invalid Robtex response for ${context}: ${summary}`);
     this.name = 'RobtexValidationError';
     this.context = context;
-    this.issues = error.issues;
+    this.issues = issues;
     this.raw = raw;
   }
 }
@@ -39,7 +51,6 @@ export function parseResponse<T extends z.ZodType>(
 
 /**
  * Soft-parse: returns data on success, or null + logs on failure.
- * Useful when you prefer not to crash on shape drift.
  */
 export function tryParseResponse<T extends z.ZodType>(
   schema: T,

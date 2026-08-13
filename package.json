@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js",
+    "start:web": "node dist/server.js",
     "dev": "tsx src/cli.ts",
     "server": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",

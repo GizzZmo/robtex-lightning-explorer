@@ -1,12 +1,13 @@
 # Robtex Lightning & Bitcoin Explorer
 
 [![CI](https://github.com/GizzZmo/robtex-lightning-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/GizzZmo/robtex-lightning-explorer/actions/workflows/ci.yml)
+[![Docker](https://github.com/GizzZmo/robtex-lightning-explorer/actions/workflows/docker.yml/badge.svg)](https://github.com/GizzZmo/robtex-lightning-explorer/actions/workflows/docker.yml)
 
 **Lightning Network & Bitcoin explorer** powered by the [Robtex API](https://robtex.com).
 
 Unique differentiator: combine classic Lightning node/channel intelligence with Bitcoin address & transaction enrichment from the same data source Robtex has maintained for decades.
 
-**v1.1** — Zod runtime validation on every API response, schema-inferred types, improved package exports, GitHub Actions CI.
+**v1.1** — Zod validation, CI, Docker / Render / Fly deploy configs.
 
 ## Features
 
@@ -29,26 +30,69 @@ Unique differentiator: combine classic Lightning node/channel intelligence with 
 git clone https://github.com/GizzZmo/robtex-lightning-explorer.git
 cd robtex-lightning-explorer
 npm install
-
-# CLI (dev)
-npx tsx src/cli.ts --help
-npx tsx src/cli.ts recent --count 5
-npx tsx src/cli.ts search ACINQ
-
-# Build & link
 npm run build
-npm link
-robtex-ln --help
+
+# CLI
+npm start -- --help
+
+# Web UI + API (production)
+npm run start:web
+# → http://localhost:3847
 ```
 
 ### Environment (optional)
 
 ```bash
-# Free tier works with no key (rate-limited ~10 req/hr)
 export ROBTEX_API_KEY=your_pro_key
 # or
 export ROBTEX_RAPIDAPI_KEY=your_rapidapi_key
+export PORT=3847
+export HOST=0.0.0.0
 ```
+
+## Deploy
+
+### Docker (local)
+
+```bash
+docker build -t robtex-ln .
+docker run --rm -p 3847:3847 \
+  -e ROBTEX_API_KEY \
+  -e ROBTEX_RAPIDAPI_KEY \
+  robtex-ln
+# → http://localhost:3847/health
+```
+
+### GitHub Container Registry
+
+On every push to `main`, [`.github/workflows/docker.yml`](.github/workflows/docker.yml) builds and pushes:
+
+`ghcr.io/gizzzmo/robtex-lightning-explorer`
+
+```bash
+docker pull ghcr.io/gizzzmo/robtex-lightning-explorer:main
+```
+
+> Packages may be private by default — set the package visibility to public in GitHub Packages if needed.
+
+### Render
+
+1. New → Blueprint → connect this repo (`render.yaml`)
+2. Or New Web Service → Docker → this repo
+3. Set `ROBTEX_API_KEY` or `ROBTEX_RAPIDAPI_KEY` (optional; free tier works with rate limits)
+4. Health check path: `/health`
+
+### Fly.io
+
+```bash
+fly launch --no-deploy   # uses fly.toml
+fly secrets set ROBTEX_API_KEY=...
+fly deploy
+```
+
+### Railway / others
+
+Use the Dockerfile. Start command: `node dist/server.js`. Port from `$PORT`.
 
 ## CLI Usage
 
@@ -63,56 +107,18 @@ robtex-ln address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa
 robtex-ln tx <txid>
 robtex-ln address-txs <address>
 robtex-ln ping
-
-# JSON + skip validation if needed
-robtex-ln node <pubkey> --json
-robtex-ln recent --no-validate
-```
-
-## Web UI + API Server
-
-```bash
-npm run server
-# → http://localhost:3847
 ```
 
 ## Library Usage
 
 ```ts
-import {
-  createClient,
-  RobtexValidationError,
-  type LightningNode,
-  LightningNodeSchema,
-} from 'robtex-lightning-explorer';
+import { createClient, RobtexValidationError } from 'robtex-lightning-explorer';
 
 const client = createClient();
-// createClient({ apiKey: '...' })
-// createClient({ rapidApiKey: '...' })
-// createClient({ validate: false }) // skip Zod (not recommended)
-
-try {
-  const node: LightningNode = await client.lookupNode(
-    '03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f',
-  );
-  console.log(node.alias, node.channelcount);
-} catch (e) {
-  if (e instanceof RobtexValidationError) {
-    console.error(e.context, e.issues);
-  }
-  throw e;
-}
+const node = await client.lookupNode('03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f');
 ```
 
-Schemas are exported if you want to validate data yourself:
-
-```ts
-import { LightningNodeSchema, parseResponse } from 'robtex-lightning-explorer';
-
-const node = parseResponse(LightningNodeSchema, rawJson, 'my-context');
-```
-
-## API Endpoints (local server)
+## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -127,48 +133,10 @@ const node = parseResponse(LightningNodeSchema, rawJson, 'my-context');
 | GET | `/api/address/:address/txs` | Address transactions |
 | GET | `/health` | Health check |
 
-## CI
-
-GitHub Actions runs on every push and PR to `main`:
-
-- Node.js **20** and **22**
-- `npm ci` → `typecheck` → `build`
-- Entrypoint checks (`dist/*.js`, `dist/*.d.ts`)
-- CLI smoke tests (`--help`, `--version`)
-
-Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-
-## Rate Limits
-
-- **Free** (`freeapi.robtex.com`): ~10 requests/hour per IP
-- **RapidAPI**: Free tier 500/mo, paid plans from $19/mo
-- **Pro key**: Higher limits via Robtex dashboard
-- **x402**: Pay-per-query with USDC on Base (no keys)
-
-See [Robtex API docs](https://robtex.com/en/api) and [SDK](https://github.com/robtex/sdk).
-
-## Project Structure
-
-```
-src/
-  schemas.ts  # Zod schemas + z.infer types (source of truth)
-  validate.ts # parseResponse + RobtexValidationError
-  client.ts   # LnExplorerClient (validated Robtex calls)
-  types.ts    # Re-exports for compatibility
-  cli.ts      # Commander CLI
-  format.ts   # Terminal pretty-print
-  server.ts   # Express API + static UI
-  index.ts    # Public package exports
-public/
-  index.html  # Explorer frontend
-.github/
-  workflows/ci.yml
-```
-
 ## License
 
 MIT
 
 ---
 
-Built with [Robtex](https://robtex.com) — network intelligence since the early internet era.
+Built with [Robtex](https://robtex.com).

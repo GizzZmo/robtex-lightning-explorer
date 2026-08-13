@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: robtex-lightning-explorer
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3847"
+      - key: ROBTEX_API_KEY
+        sync: false
+      - key: ROBTEX_RAPIDAPI_KEY
+        sync: false

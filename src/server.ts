@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const client = createClient();
 const PORT = Number(process.env.PORT) || 3847;
+const HOST = process.env.HOST || '0.0.0.0';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -127,7 +128,7 @@ app.get(
   }),
 );
 
-app.listen(PORT, () => {
-  console.log(`⚡ Robtex LN Explorer v1.1.0 at http://localhost:${PORT}`);
-  console.log(`   API: http://localhost:${PORT}/api/...`);
+app.listen(PORT, HOST, () => {
+  console.log(`⚡ Robtex LN Explorer v1.1.0 at http://${HOST}:${PORT}`);
+  console.log(`   health: http://${HOST}:${PORT}/health`);
 });
