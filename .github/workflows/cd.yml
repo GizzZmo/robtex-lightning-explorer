@@ -77,7 +77,7 @@ jobs:
             type=sha,prefix=
 
       - name: Build image for scan
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -126,7 +126,7 @@ jobs:
 
       - name: Build and push to GHCR
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
