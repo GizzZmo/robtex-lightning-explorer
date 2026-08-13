@@ -10,23 +10,24 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  build:
-    name: Node ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [20, 22]
+env:
+  # Primary runtime matches package.json engines (>=20)
+  PRIMARY_NODE: "20"
 
+jobs:
+  # Fast path: install once, typecheck + build + smoke on the supported baseline.
+  quality:
+    name: Quality (Node ${{ env.PRIMARY_NODE }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.PRIMARY_NODE }}
           cache: npm
 
       - name: Install dependencies
@@ -53,9 +54,46 @@ jobs:
           node dist/cli.js --version
 
       - name: Upload build artifacts
-        if: matrix.node-version == 22
         uses: actions/upload-artifact@v4
         with:
-          name: dist-node-${{ matrix.node-version }}
+          name: dist
           path: dist/
           retention-days: 7
+
+  # Compatibility matrix runs only after quality passes.
+  # On PRs: skip extra runtimes (baseline already covered).
+  # On main: also verify current Node LTS line (22).
+  compatibility:
+    name: Compat Node ${{ matrix.node-version }}
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        node-version: [22]
+        # Extend when needed, e.g. [22, 24]
+        # exclude examples:
+        # exclude:
+        #   - node-version: 24
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: CLI smoke test
+        run: |
+          node dist/cli.js --help
+          node dist/cli.js --version
