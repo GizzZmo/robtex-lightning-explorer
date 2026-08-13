@@ -106,12 +106,17 @@
     .status.err { color: var(--err); }
     .status.ok { color: var(--ok); }
     .hint { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; }
+    footer {
+      max-width: 960px; margin: 0 auto; padding: 0 1.25rem 2rem;
+      color: var(--muted); font-size: 0.75rem;
+    }
+    footer a { color: var(--ln); }
   </style>
 </head>
 <body>
   <header>
     <h1><span class="ln">Lightning</span> · <span class="btc">Bitcoin</span> Explorer</h1>
-    <p class="sub">Powered by Robtex API — node/channel lookup, peers, recent channels, address &amp; tx enrichment</p>
+    <p class="sub">Powered by Robtex API — node/channel lookup, peers, recent channels, address &amp; tx enrichment · v1.2</p>
   </header>
   <main>
     <div class="tabs" id="tabs">
@@ -120,8 +125,12 @@
       <button class="tab" data-mode="peers">Peers</button>
       <button class="tab" data-mode="recent">Recent channels</button>
       <button class="tab" data-mode="channel">Channel</button>
+      <button class="tab" data-mode="channels">Channels / node</button>
       <button class="tab" data-mode="address">BTC address</button>
       <button class="tab" data-mode="tx">BTC tx</button>
+      <button class="tab" data-mode="spends">Tx spends</button>
+      <button class="tab" data-mode="addressTxs">Address txs</button>
+      <button class="tab" data-mode="block">Block</button>
     </div>
 
     <div class="panel">
@@ -134,6 +143,11 @@
       <pre id="out">Results will appear here…</pre>
     </div>
   </main>
+  <footer>
+    <a href="/health">/health</a> ·
+    <a href="/health?deep=1">/health?deep=1</a> ·
+    <a href="https://github.com/GizzZmo/robtex-lightning-explorer">GitHub</a>
+  </footer>
 
   <script>
     const modes = {
@@ -168,6 +182,12 @@
         path: (v) => `/api/channel/${encodeURIComponent(v)}`,
         btn: 'Lookup channel',
       },
+      channels: {
+        placeholder: 'Node public key',
+        hint: 'List channels belonging to a Lightning node.',
+        path: (v) => `/api/channels/${encodeURIComponent(v)}?limit=50`,
+        btn: 'List channels',
+      },
       address: {
         placeholder: 'Bitcoin address',
         hint: 'Balance, type, first/last seen, ransomware/abuse flags.',
@@ -180,6 +200,27 @@
         hint: 'Full tx details + Lightning channel correlation when present.',
         path: (v) => `/api/tx/${encodeURIComponent(v)}`,
         btn: 'Enrich tx',
+        btc: true,
+      },
+      spends: {
+        placeholder: 'Transaction ID (txid)',
+        hint: 'Which later transactions spent the outputs of this tx.',
+        path: (v) => `/api/tx/${encodeURIComponent(v)}/spends`,
+        btn: 'Track spends',
+        btc: true,
+      },
+      addressTxs: {
+        placeholder: 'Bitcoin address',
+        hint: 'Paginated transaction history for an address.',
+        path: (v) => `/api/address/${encodeURIComponent(v)}/txs?limit=25`,
+        btn: 'Load txs',
+        btc: true,
+      },
+      block: {
+        placeholder: 'Block height (e.g. 840000)',
+        hint: 'Bitcoin block header and metadata by height.',
+        path: (v) => `/api/block/${encodeURIComponent(v)}`,
+        btn: 'Lookup block',
         btc: true,
       },
     };

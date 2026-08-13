@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from './client.js';
+import { responseCache } from './cache.js';
 import { RobtexValidationError } from './validate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -9,8 +10,22 @@ const app = express();
 const client = createClient();
 const PORT = Number(process.env.PORT) || 3847;
 const HOST = process.env.HOST || '0.0.0.0';
+const VERSION = '1.2.0';
 
 app.use(express.json());
+
+// CORS — allow browser clients / other origins to hit the API
+app.use((_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (_req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 function firstParam(value: string | string[] | undefined): string {
@@ -31,7 +46,7 @@ function asyncHandler(
         return;
       }
       const e = err as { status?: number; message?: string };
-      const status = e?.status === 429 ? 429 : 500;
+      const status = e?.status === 429 ? 429 : e?.status === 404 ? 404 : 500;
       res.status(status).json({
         error: e?.message ?? 'Internal error',
         status: e?.status,
@@ -40,14 +55,47 @@ function asyncHandler(
   };
 }
 
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'robtex-lightning-explorer', version: '1.1.0' });
-});
+/** Cache-aware wrapper: key built from path + query. */
+async function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = responseCache.get<T>(key);
+  if (hit !== undefined) return hit;
+  const data = await fn();
+  responseCache.set(key, data);
+  return data;
+}
+
+app.get('/health', asyncHandler(async (req, res) => {
+  const deep = req.query.deep === '1' || req.query.deep === 'true';
+  const base = {
+    ok: true,
+    service: 'robtex-lightning-explorer',
+    version: VERSION,
+    cache: responseCache.stats,
+    uptime_s: Math.floor(process.uptime()),
+  };
+  if (!deep) {
+    res.json(base);
+    return;
+  }
+  try {
+    const ping = await client.ping();
+    res.json({ ...base, robtex: { reachable: true, ping } });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(503).json({
+      ...base,
+      ok: false,
+      robtex: { reachable: false, error: msg },
+    });
+  }
+}));
 
 app.get(
   '/api/node/:pubkey',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupNode(firstParam(req.params.pubkey));
+    const pubkey = firstParam(req.params.pubkey);
+    const key = `node:${pubkey}`;
+    const data = await cached(key, () => client.lookupNode(pubkey));
     res.json(data);
   }),
 );
@@ -55,7 +103,9 @@ app.get(
 app.get(
   '/api/channel/:id',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupChannel(firstParam(req.params.id));
+    const id = firstParam(req.params.id);
+    const key = `channel:${id}`;
+    const data = await cached(key, () => client.lookupChannel(id));
     res.json(data);
   }),
 );
@@ -64,7 +114,9 @@ app.get(
   '/api/peers/:pubkey',
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 10;
-    const data = await client.recommendedPeers(firstParam(req.params.pubkey), limit);
+    const pubkey = firstParam(req.params.pubkey);
+    const key = `peers:${pubkey}:${limit}`;
+    const data = await cached(key, () => client.recommendedPeers(pubkey, limit));
     res.json(data);
   }),
 );
@@ -73,7 +125,8 @@ app.get(
   '/api/recent',
   asyncHandler(async (req, res) => {
     const count = Number(req.query.count) || 10;
-    const data = await client.latestChannels(count);
+    const key = `recent:${count}`;
+    const data = await cached(key, () => client.latestChannels(count));
     res.json(data);
   }),
 );
@@ -87,7 +140,8 @@ app.get(
       return;
     }
     const limit = Number(req.query.limit) || 20;
-    const data = await client.searchNodes(alias, limit);
+    const key = `search:${alias}:${limit}`;
+    const data = await cached(key, () => client.searchNodes(alias, limit));
     res.json(data);
   }),
 );
@@ -97,7 +151,9 @@ app.get(
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 50;
     const offset = Number(req.query.offset) || 0;
-    const data = await client.channelsForNode(firstParam(req.params.pubkey), limit, offset);
+    const pubkey = firstParam(req.params.pubkey);
+    const key = `channels:${pubkey}:${limit}:${offset}`;
+    const data = await cached(key, () => client.channelsForNode(pubkey, limit, offset));
     res.json(data);
   }),
 );
@@ -105,7 +161,9 @@ app.get(
 app.get(
   '/api/address/:address',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupAddress(firstParam(req.params.address));
+    const address = firstParam(req.params.address);
+    const key = `address:${address}`;
+    const data = await cached(key, () => client.lookupAddress(address));
     res.json(data);
   }),
 );
@@ -113,7 +171,19 @@ app.get(
 app.get(
   '/api/tx/:txid',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupTransaction(firstParam(req.params.txid));
+    const txid = firstParam(req.params.txid);
+    const key = `tx:${txid}`;
+    const data = await cached(key, () => client.lookupTransaction(txid));
+    res.json(data);
+  }),
+);
+
+app.get(
+  '/api/tx/:txid/spends',
+  asyncHandler(async (req, res) => {
+    const txid = firstParam(req.params.txid);
+    const key = `tx-spends:${txid}`;
+    const data = await cached(key, () => client.transactionSpends(txid));
     res.json(data);
   }),
 );
@@ -123,16 +193,29 @@ app.get(
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 25;
     const offset = Number(req.query.offset) || 0;
-    const data = await client.addressTransactions(
-      firstParam(req.params.address),
-      limit,
-      offset,
-    );
+    const address = firstParam(req.params.address);
+    const key = `address-txs:${address}:${limit}:${offset}`;
+    const data = await cached(key, () => client.addressTransactions(address, limit, offset));
+    res.json(data);
+  }),
+);
+
+app.get(
+  '/api/block/:height',
+  asyncHandler(async (req, res) => {
+    const height = Number(req.params.height);
+    if (!Number.isFinite(height) || height < 0) {
+      res.status(400).json({ error: 'height must be a non-negative number' });
+      return;
+    }
+    const key = `block:${height}`;
+    const data = await cached(key, () => client.lookupBlock(height));
     res.json(data);
   }),
 );
 
 app.listen(PORT, HOST, () => {
-  console.log(`⚡ Robtex LN Explorer v1.1.0 at http://${HOST}:${PORT}`);
+  console.log(`⚡ Robtex LN Explorer v${VERSION} at http://${HOST}:${PORT}`);
   console.log(`   health: http://${HOST}:${PORT}/health`);
+  console.log(`   cache TTL: ${responseCache.stats.ttlMs}ms`);
 });

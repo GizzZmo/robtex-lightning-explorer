@@ -5,12 +5,14 @@ import { createClient } from './client.js';
 import { error, header, prettyObject, printJson } from './format.js';
 import { RobtexValidationError } from './validate.js';
 
+const VERSION = '1.2.0';
+
 const program = new Command();
 
 program
   .name('robtex-ln')
   .description('Lightning Network & Bitcoin explorer powered by Robtex API')
-  .version('1.1.0')
+  .version(VERSION)
   .option('--json', 'Output raw JSON')
   .option('--api-key <key>', 'Robtex Pro API key')
   .option('--rapid-key <key>', 'RapidAPI key')
@@ -155,6 +157,15 @@ program
   });
 
 program
+  .command('spends <txid>')
+  .description('Which later transactions spent the outputs of a given tx')
+  .action(async (txid, _o, cmd) => {
+    const opts = cmd.optsWithGlobals();
+    const client = getClient(opts);
+    await run(`Spends of ${txid.slice(0, 16)}…`, () => client.transactionSpends(txid), opts);
+  });
+
+program
   .command('address-txs <address>')
   .description('Transaction history for a Bitcoin address')
   .option('-n, --limit <n>', 'Max txs', '25')
@@ -167,6 +178,21 @@ program
       () => client.addressTransactions(address, Number(local.limit), Number(local.offset)),
       opts,
     );
+  });
+
+program
+  .command('block <height>')
+  .description('Bitcoin block by height')
+  .action(async (height, _o, cmd) => {
+    const opts = cmd.optsWithGlobals();
+    const client = getClient(opts);
+    const h = Number(height);
+    if (!Number.isFinite(h) || h < 0) {
+      error('height must be a non-negative number');
+      process.exitCode = 1;
+      return;
+    }
+    await run(`Block ${h}`, () => client.lookupBlock(h), opts);
   });
 
 program
