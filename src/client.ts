@@ -6,7 +6,6 @@ import type {
   BitcoinTransactionResponse,
   BitcoinTransactionSpendsResponse,
   ChannelsPerNodeResponse,
-  ClientOptions as _Unused,
   LatestLightningChannelsResponse,
   LightningChannel,
   LightningNode,
