@@ -17,7 +17,7 @@ jobs:
   quality:
     name: Quality (Node 20)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,11 +26,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.PRIMARY_NODE }}
-          # Re-enable after committing package-lock.json:
+          # Enable when package-lock.json is committed:
           # cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Typecheck
         run: npm run typecheck
@@ -40,23 +41,39 @@ jobs:
 
       - name: Verify package entrypoints
         run: |
-          test -f dist/index.js
-          test -f dist/index.d.ts
-          test -f dist/cli.js
-          test -f dist/client.js
-          test -f dist/schemas.js
-          test -f dist/validate.js
+          for f in index.js index.d.ts cli.js client.js server.js schemas.js validate.js; do
+            test -f "dist/$f" || { echo "missing dist/$f"; exit 1; }
+          done
 
       - name: CLI smoke test
         run: |
           node dist/cli.js --help
           node dist/cli.js --version
 
+      - name: Server smoke test
+        run: |
+          node dist/server.js &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3847/health >/dev/null; then
+              curl -sf http://127.0.0.1:3847/health | tee /tmp/health.json
+              grep -q '"ok":true' /tmp/health.json
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "Server failed to become healthy"
+          exit 1
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: |
+            dist/
+            public/
+            package.json
           retention-days: 7
 
   compatibility:
@@ -79,7 +96,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Build
         run: npm run build
@@ -88,3 +106,39 @@ jobs:
         run: |
           node dist/cli.js --help
           node dist/cli.js --version
+
+  docker-build:
+    name: Docker build (no push)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (load locally)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: robtex-ln:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Container health smoke
+        run: |
+          docker run -d --name robtex-ci -p 3847:3847 robtex-ln:ci
+          for i in $(seq 1 40); do
+            if curl -sf http://127.0.0.1:3847/health >/dev/null; then
+              curl -sf http://127.0.0.1:3847/health
+              docker rm -f robtex-ci
+              exit 0
+            fi
+            sleep 0.5
+          done
+          docker logs robtex-ci || true
+          docker rm -f robtex-ci || true
+          exit 1
