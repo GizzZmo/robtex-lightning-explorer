@@ -13,6 +13,10 @@ const HOST = process.env.HOST || '0.0.0.0';
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+function firstParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
 function asyncHandler(
   fn: (req: express.Request, res: express.Response) => Promise<void>,
 ) {
@@ -43,7 +47,7 @@ app.get('/health', (_req, res) => {
 app.get(
   '/api/node/:pubkey',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupNode(req.params.pubkey);
+    const data = await client.lookupNode(firstParam(req.params.pubkey));
     res.json(data);
   }),
 );
@@ -51,7 +55,7 @@ app.get(
 app.get(
   '/api/channel/:id',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupChannel(req.params.id);
+    const data = await client.lookupChannel(firstParam(req.params.id));
     res.json(data);
   }),
 );
@@ -60,7 +64,7 @@ app.get(
   '/api/peers/:pubkey',
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 10;
-    const data = await client.recommendedPeers(req.params.pubkey, limit);
+    const data = await client.recommendedPeers(firstParam(req.params.pubkey), limit);
     res.json(data);
   }),
 );
@@ -93,7 +97,7 @@ app.get(
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 50;
     const offset = Number(req.query.offset) || 0;
-    const data = await client.channelsForNode(req.params.pubkey, limit, offset);
+    const data = await client.channelsForNode(firstParam(req.params.pubkey), limit, offset);
     res.json(data);
   }),
 );
@@ -101,7 +105,7 @@ app.get(
 app.get(
   '/api/address/:address',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupAddress(req.params.address);
+    const data = await client.lookupAddress(firstParam(req.params.address));
     res.json(data);
   }),
 );
@@ -109,7 +113,7 @@ app.get(
 app.get(
   '/api/tx/:txid',
   asyncHandler(async (req, res) => {
-    const data = await client.lookupTransaction(req.params.txid);
+    const data = await client.lookupTransaction(firstParam(req.params.txid));
     res.json(data);
   }),
 );
@@ -120,7 +124,7 @@ app.get(
     const limit = Number(req.query.limit) || 25;
     const offset = Number(req.query.offset) || 0;
     const data = await client.addressTransactions(
-      req.params.address,
+      firstParam(req.params.address),
       limit,
       offset,
     );
