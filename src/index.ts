@@ -2,9 +2,12 @@ export {
   LnExplorerClient,
   createClient,
   type ClientOptions,
+  type EgoGraphOptions,
 } from './client.js';
 
 export { RobtexValidationError, parseResponse, tryParseResponse } from './validate.js';
+
+export { buildEgoGraph, type EgoGraph, type EgoNode, type EgoLink } from './ego.js';
 
 export type {
   ApiStatus,

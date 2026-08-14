@@ -26,12 +26,23 @@ import {
   type SearchNodesResponse,
 } from './schemas.js';
 import { parseResponse } from './validate.js';
+import { buildEgoGraph, type EgoGraph } from './ego.js';
 
 export interface ClientOptions {
   apiKey?: string;
   rapidApiKey?: string;
   /** When false, skip Zod validation (not recommended). Default true. */
   validate?: boolean;
+}
+
+export interface EgoGraphOptions {
+  /** Max channels to include (largest first). Default 80. */
+  maxChannels?: number;
+  /** Include recommended peers as dashed edges. Default true. */
+  includeRecommended?: boolean;
+  /** Max recommended peers. Default 8. */
+  maxRecommended?: number;
+  channelLimit?: number;
 }
 
 /**
@@ -67,7 +78,6 @@ export class LnExplorerClient {
 
   // ── Lightning Network ──────────────────────────────────────────────
 
-  /** Lookup a Lightning node by public key (66 hex chars). */
   async lookupNode(pubkey: string): Promise<LightningNode> {
     const raw = await this.api.lookupLightningNode({
       pubkey: normalizePubkey(pubkey),
@@ -75,7 +85,6 @@ export class LnExplorerClient {
     return this.parse(LightningNodeSchema, raw, 'lookupNode');
   }
 
-  /** Lookup a channel by short channel ID (e.g. 936795x1154x0). */
   async lookupChannel(channelId: string): Promise<LightningChannel> {
     const raw = await this.api.lookupLightningChannel({
       channel_id: channelId,
@@ -83,7 +92,6 @@ export class LnExplorerClient {
     return this.parse(LightningChannelSchema, raw, 'lookupChannel');
   }
 
-  /** Recommended peers for a node. */
   async recommendedPeers(
     pubkey: string,
     limit = 10,
@@ -95,19 +103,16 @@ export class LnExplorerClient {
     return this.parse(RecommendedPeersResponseSchema, raw, 'recommendedPeers');
   }
 
-  /** Most recently opened Lightning channels. */
   async latestChannels(count = 10): Promise<LatestLightningChannelsResponse> {
     const raw = await this.api.latestLightningChannels({ count });
     return this.parse(LatestLightningChannelsResponseSchema, raw, 'latestChannels');
   }
 
-  /** Search nodes by alias (partial match). */
   async searchNodes(alias: string, limit = 20): Promise<SearchNodesResponse> {
     const raw = await this.api.searchLightningNodesByAlias({ alias, limit });
     return this.parse(SearchNodesResponseSchema, raw, 'searchNodes');
   }
 
-  /** All (or paginated) channels for a node. */
   async channelsForNode(
     pubkey: string,
     limit = 100,
@@ -121,21 +126,49 @@ export class LnExplorerClient {
     return this.parse(ChannelsPerNodeResponseSchema, raw, 'channelsForNode');
   }
 
+  /**
+   * Build an ego-graph (center node + direct channel peers).
+   * Optionally overlays recommended peers as non-channel edges.
+   */
+  async egoGraph(
+    pubkey: string,
+    options: EgoGraphOptions = {},
+  ): Promise<EgoGraph> {
+    const pk = normalizePubkey(pubkey);
+    const channelLimit = options.channelLimit ?? options.maxChannels ?? 80;
+    const includeRec = options.includeRecommended !== false;
+
+    const [node, channelsRes, peersRes] = await Promise.all([
+      this.lookupNode(pk),
+      this.channelsForNode(pk, channelLimit, 0),
+      includeRec
+        ? this.recommendedPeers(pk, options.maxRecommended ?? 8).catch(
+            () => null,
+          )
+        : Promise.resolve(null),
+    ]);
+
+    return buildEgoGraph({
+      centerNode: node,
+      channels: channelsRes.channels ?? [],
+      recommended: peersRes?.recommended_peers,
+      maxChannels: options.maxChannels ?? 80,
+      maxRecommended: options.maxRecommended ?? 8,
+    });
+  }
+
   // ── Bitcoin ────────────────────────────────────────────────────────
 
-  /** Enrich a Bitcoin address (balance, type, first/last seen, abuse flags). */
   async lookupAddress(address: string): Promise<BitcoinAddressResponse> {
     const raw = await this.api.lookupBitcoinAddress({ address });
     return this.parse(BitcoinAddressResponseSchema, raw, 'lookupAddress');
   }
 
-  /** Full transaction details + possible LN channel correlation. */
   async lookupTransaction(txid: string): Promise<BitcoinTransactionResponse> {
     const raw = await this.api.lookupBitcoinTransaction({ txid });
     return this.parse(BitcoinTransactionResponseSchema, raw, 'lookupTransaction');
   }
 
-  /** Paginated list of transactions involving an address. */
   async addressTransactions(
     address: string,
     limit = 25,
@@ -153,7 +186,6 @@ export class LnExplorerClient {
     );
   }
 
-  /** Which later transactions spent the outputs of a given tx. */
   async transactionSpends(
     txid: string,
   ): Promise<BitcoinTransactionSpendsResponse> {
@@ -165,13 +197,11 @@ export class LnExplorerClient {
     );
   }
 
-  /** Block header + tx list by height. */
   async lookupBlock(height: number): Promise<BitcoinBlockResponse> {
     const raw = await this.api.lookupBitcoinBlock({ height });
     return this.parse(BitcoinBlockResponseSchema, raw, 'lookupBlock');
   }
 
-  /** Health / connectivity check. */
   async ping(): Promise<PingResponse> {
     const raw = await this.api.ping();
     return this.parse(PingResponseSchema, raw, 'ping');
@@ -187,4 +217,6 @@ function normalizePubkey(pubkey: string): string {
 }
 
 export type * from './schemas.js';
+export type { EgoGraph, EgoNode, EgoLink } from './ego.js';
+export { buildEgoGraph } from './ego.js';
 export { RobtexValidationError } from './validate.js';
