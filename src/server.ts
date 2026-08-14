@@ -27,6 +27,10 @@ app.use((_req, res, next) => {
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+function firstParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
 function asyncHandler(
   fn: (req: express.Request, res: express.Response) => Promise<void>,
 ) {
@@ -87,8 +91,9 @@ app.get('/health', asyncHandler(async (req, res) => {
 app.get(
   '/api/node/:pubkey',
   asyncHandler(async (req, res) => {
-    const key = `node:${req.params.pubkey}`;
-    const data = await cached(key, () => client.lookupNode(req.params.pubkey));
+    const pubkey = firstParam(req.params.pubkey);
+    const key = `node:${pubkey}`;
+    const data = await cached(key, () => client.lookupNode(pubkey));
     res.json(data);
   }),
 );
@@ -96,8 +101,9 @@ app.get(
 app.get(
   '/api/channel/:id',
   asyncHandler(async (req, res) => {
-    const key = `channel:${req.params.id}`;
-    const data = await cached(key, () => client.lookupChannel(req.params.id));
+    const id = firstParam(req.params.id);
+    const key = `channel:${id}`;
+    const data = await cached(key, () => client.lookupChannel(id));
     res.json(data);
   }),
 );
@@ -106,10 +112,9 @@ app.get(
   '/api/peers/:pubkey',
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 10;
-    const key = `peers:${req.params.pubkey}:${limit}`;
-    const data = await cached(key, () =>
-      client.recommendedPeers(req.params.pubkey, limit),
-    );
+    const pubkey = firstParam(req.params.pubkey);
+    const key = `peers:${pubkey}:${limit}`;
+    const data = await cached(key, () => client.recommendedPeers(pubkey, limit));
     res.json(data);
   }),
 );
@@ -144,10 +149,9 @@ app.get(
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 50;
     const offset = Number(req.query.offset) || 0;
-    const key = `channels:${req.params.pubkey}:${limit}:${offset}`;
-    const data = await cached(key, () =>
-      client.channelsForNode(req.params.pubkey, limit, offset),
-    );
+    const pubkey = firstParam(req.params.pubkey);
+    const key = `channels:${pubkey}:${limit}:${offset}`;
+    const data = await cached(key, () => client.channelsForNode(pubkey, limit, offset));
     res.json(data);
   }),
 );
@@ -176,8 +180,9 @@ app.get(
 app.get(
   '/api/address/:address',
   asyncHandler(async (req, res) => {
-    const key = `address:${req.params.address}`;
-    const data = await cached(key, () => client.lookupAddress(req.params.address));
+    const address = firstParam(req.params.address);
+    const key = `address:${address}`;
+    const data = await cached(key, () => client.lookupAddress(address));
     res.json(data);
   }),
 );
@@ -185,8 +190,9 @@ app.get(
 app.get(
   '/api/tx/:txid',
   asyncHandler(async (req, res) => {
-    const key = `tx:${req.params.txid}`;
-    const data = await cached(key, () => client.lookupTransaction(req.params.txid));
+    const txid = firstParam(req.params.txid);
+    const key = `tx:${txid}`;
+    const data = await cached(key, () => client.lookupTransaction(txid));
     res.json(data);
   }),
 );
@@ -194,8 +200,9 @@ app.get(
 app.get(
   '/api/tx/:txid/spends',
   asyncHandler(async (req, res) => {
-    const key = `tx-spends:${req.params.txid}`;
-    const data = await cached(key, () => client.transactionSpends(req.params.txid));
+    const txid = firstParam(req.params.txid);
+    const key = `tx-spends:${txid}`;
+    const data = await cached(key, () => client.transactionSpends(txid));
     res.json(data);
   }),
 );
@@ -205,10 +212,9 @@ app.get(
   asyncHandler(async (req, res) => {
     const limit = Number(req.query.limit) || 25;
     const offset = Number(req.query.offset) || 0;
-    const key = `address-txs:${req.params.address}:${limit}:${offset}`;
-    const data = await cached(key, () =>
-      client.addressTransactions(req.params.address, limit, offset),
-    );
+    const address = firstParam(req.params.address);
+    const key = `address-txs:${address}:${limit}:${offset}`;
+    const data = await cached(key, () => client.addressTransactions(address, limit, offset));
     res.json(data);
   }),
 );
