@@ -14,7 +14,8 @@ export class TtlCache {
   private readonly maxEntries: number;
 
   constructor(options?: { ttlMs?: number; maxEntries?: number }) {
-    this.defaultTtlMs = options?.ttlMs ?? Number(process.env.CACHE_TTL_MS) || 60_000;
+    this.defaultTtlMs =
+      options?.ttlMs ?? (Number(process.env.CACHE_TTL_MS) || 60_000);
     this.maxEntries = options?.maxEntries ?? 500;
   }
 
