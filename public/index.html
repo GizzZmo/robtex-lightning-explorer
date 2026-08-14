@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Robtex Lightning & Bitcoin Explorer</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
   <style>
     :root {
       --bg: #0b0f14;
@@ -15,6 +16,8 @@
       --ln: #7b61ff;
       --ok: #3dd68c;
       --err: #ff6b6b;
+      --peer: #4ea1ff;
+      --rec: #f0c14b;
     }
     * { box-sizing: border-box; }
     body {
@@ -28,7 +31,7 @@
     }
     header {
       padding: 1.5rem 1.25rem 0.5rem;
-      max-width: 960px;
+      max-width: 1100px;
       margin: 0 auto;
     }
     h1 {
@@ -40,7 +43,7 @@
     h1 span.ln { color: var(--ln); }
     h1 span.btc { color: var(--accent); }
     .sub { color: var(--muted); font-size: 0.9rem; margin-top: 0.35rem; }
-    main { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
+    main { max-width: 1100px; margin: 0 auto; padding: 1rem 1.25rem 3rem; }
     .tabs {
       display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 1.25rem 0 1rem;
     }
@@ -65,7 +68,7 @@
       padding: 1.1rem;
     }
     .row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-    input, select {
+    input {
       flex: 1;
       min-width: 180px;
       background: #0d1219;
@@ -75,7 +78,7 @@
       border-radius: 8px;
       font-size: 0.95rem;
     }
-    button {
+    button#go {
       background: linear-gradient(135deg, var(--ln), #5a3fd4);
       border: none;
       color: white;
@@ -84,8 +87,8 @@
       font-weight: 600;
       cursor: pointer;
     }
-    button:disabled { opacity: 0.5; cursor: wait; }
-    button.btc {
+    button#go:disabled { opacity: 0.5; cursor: wait; }
+    button#go.btc {
       background: linear-gradient(135deg, var(--accent), #c97812);
     }
     #out {
@@ -95,19 +98,62 @@
       border-radius: 10px;
       padding: 1rem;
       overflow: auto;
-      max-height: 65vh;
+      max-height: 55vh;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.8rem;
       line-height: 1.45;
       white-space: pre-wrap;
       word-break: break-word;
     }
+    #graph-wrap {
+      display: none;
+      margin-top: 1rem;
+      background: #0d1219;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+      height: 520px;
+    }
+    #graph-wrap.visible { display: block; }
+    #graph-svg { width: 100%; height: 100%; cursor: grab; }
+    #graph-svg:active { cursor: grabbing; }
     .status { margin-top: 0.6rem; font-size: 0.85rem; color: var(--muted); }
     .status.err { color: var(--err); }
     .status.ok { color: var(--ok); }
     .hint { color: var(--muted); font-size: 0.8rem; margin-top: 0.5rem; }
+    .legend {
+      display: none;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .legend.visible { display: flex; }
+    .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    }
+    .dot.center { background: var(--ln); box-shadow: 0 0 8px var(--ln); }
+    .dot.peer { background: var(--peer); }
+    .dot.rec { background: var(--rec); border: 1px dashed #fff3; }
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: #1a2332;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 0.7rem;
+      font-size: 0.75rem;
+      color: var(--text);
+      max-width: 280px;
+      display: none;
+      z-index: 10;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
     footer {
-      max-width: 960px; margin: 0 auto; padding: 0 1.25rem 2rem;
+      max-width: 1100px; margin: 0 auto; padding: 0 1.25rem 2rem;
       color: var(--muted); font-size: 0.75rem;
     }
     footer a { color: var(--ln); }
@@ -116,11 +162,12 @@
 <body>
   <header>
     <h1><span class="ln">Lightning</span> · <span class="btc">Bitcoin</span> Explorer</h1>
-    <p class="sub">Powered by Robtex API — node/channel lookup, peers, recent channels, address &amp; tx enrichment · v1.2</p>
+    <p class="sub">Powered by Robtex API — lookup, ego-graph (D3), peers, address &amp; tx enrichment · v1.3</p>
   </header>
   <main>
     <div class="tabs" id="tabs">
-      <button class="tab active" data-mode="node">Node</button>
+      <button class="tab" data-mode="node">Node</button>
+      <button class="tab active" data-mode="ego">Ego graph</button>
       <button class="tab" data-mode="search">Search alias</button>
       <button class="tab" data-mode="peers">Peers</button>
       <button class="tab" data-mode="recent">Recent channels</button>
@@ -136,16 +183,27 @@
     <div class="panel">
       <div class="row" id="form-row">
         <input id="q" placeholder="Node public key (66 hex)" autocomplete="off" />
-        <button id="go">Lookup</button>
+        <button id="go">Draw ego-graph</button>
       </div>
-      <p class="hint" id="hint">Enter a 66-character Lightning node public key.</p>
+      <p class="hint" id="hint">Ego-graph: center node + direct channel peers (D3 force layout). Optional recommended peers as dashed edges.</p>
       <div class="status" id="status"></div>
+      <div class="legend" id="legend">
+        <span><i class="dot center"></i> Center</span>
+        <span><i class="dot peer"></i> Channel peer</span>
+        <span><i class="dot rec"></i> Recommended (no channel yet)</span>
+        <span>Edge thickness ∝ capacity · drag nodes · scroll to zoom</span>
+      </div>
+      <div id="graph-wrap">
+        <svg id="graph-svg"></svg>
+        <div id="tooltip"></div>
+      </div>
       <pre id="out">Results will appear here…</pre>
     </div>
   </main>
   <footer>
     <a href="/health">/health</a> ·
     <a href="/health?deep=1">/health?deep=1</a> ·
+    <a href="/api/ego/03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f">sample /api/ego/…</a> ·
     <a href="https://github.com/GizzZmo/robtex-lightning-explorer">GitHub</a>
   </footer>
 
@@ -156,6 +214,13 @@
         hint: 'Enter a 66-character Lightning node public key.',
         path: (v) => `/api/node/${encodeURIComponent(v)}`,
         btn: 'Lookup node',
+      },
+      ego: {
+        placeholder: 'Node public key (66 hex)',
+        hint: 'Ego-graph: center + channel peers (D3). Optional recommended peers as dashed edges.',
+        path: (v) => `/api/ego/${encodeURIComponent(v)}?maxChannels=60&maxRecommended=8`,
+        btn: 'Draw ego-graph',
+        graph: true,
       },
       search: {
         placeholder: 'Node alias (e.g. ACINQ)',
@@ -225,12 +290,17 @@
       },
     };
 
-    let mode = 'node';
+    let mode = 'ego';
+    let simulation = null;
+
     const q = document.getElementById('q');
     const go = document.getElementById('go');
     const out = document.getElementById('out');
     const status = document.getElementById('status');
     const hint = document.getElementById('hint');
+    const graphWrap = document.getElementById('graph-wrap');
+    const legend = document.getElementById('legend');
+    const tooltip = document.getElementById('tooltip');
 
     document.getElementById('tabs').addEventListener('click', (e) => {
       const t = e.target.closest('.tab');
@@ -244,7 +314,143 @@
       go.textContent = m.btn;
       go.classList.toggle('btc', !!m.btc);
       status.textContent = '';
+      if (!m.graph) {
+        graphWrap.classList.remove('visible');
+        legend.classList.remove('visible');
+        if (simulation) simulation.stop();
+      }
     });
+
+    function satsFmt(n) {
+      if (n == null || !Number.isFinite(n)) return '—';
+      if (n >= 1e8) return (n / 1e8).toFixed(2) + ' BTC';
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + ' M sats';
+      return Math.round(n).toLocaleString() + ' sats';
+    }
+
+    function shortPk(id) {
+      if (!id) return '';
+      return id.slice(0, 8) + '…' + id.slice(-4);
+    }
+
+    function renderEgoGraph(data) {
+      graphWrap.classList.add('visible');
+      legend.classList.add('visible');
+
+      const svg = d3.select('#graph-svg');
+      svg.selectAll('*').remove();
+
+      const width = graphWrap.clientWidth || 900;
+      const height = graphWrap.clientHeight || 520;
+
+      const gRoot = svg.append('g');
+
+      const zoom = d3.zoom()
+        .scaleExtent([0.2, 4])
+        .on('zoom', (event) => gRoot.attr('transform', event.transform));
+      svg.call(zoom);
+
+      const nodes = data.nodes.map((d) => ({ ...d }));
+      const links = data.links.map((d) => ({ ...d }));
+
+      const maxCap = d3.max(links, (d) => d.capacity || 0) || 1;
+
+      if (simulation) simulation.stop();
+
+      simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id((d) => d.id).distance((d) => {
+          if (d.kind === 'recommended') return 160;
+          const c = d.capacity || 0;
+          return 70 + 80 * (1 - Math.min(c / maxCap, 1));
+        }).strength(0.6))
+        .force('charge', d3.forceManyBody().strength(-280))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collision', d3.forceCollide().radius((d) => d.kind === 'center' ? 28 : 16));
+
+      const link = gRoot.append('g')
+        .attr('stroke-opacity', 0.7)
+        .selectAll('line')
+        .data(links)
+        .join('line')
+        .attr('stroke', (d) => d.kind === 'recommended' ? 'var(--rec)' : '#4a5d78')
+        .attr('stroke-width', (d) => {
+          if (d.kind === 'recommended') return 1.2;
+          const t = Math.sqrt((d.capacity || 0) / maxCap);
+          return 1 + t * 6;
+        })
+        .attr('stroke-dasharray', (d) => d.kind === 'recommended' ? '4 3' : null);
+
+      const node = gRoot.append('g')
+        .selectAll('g')
+        .data(nodes)
+        .join('g')
+        .call(d3.drag()
+          .on('start', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+          })
+          .on('drag', (event, d) => {
+            d.fx = event.x; d.fy = event.y;
+          })
+          .on('end', (event, d) => {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null; d.fy = null;
+          }));
+
+      node.append('circle')
+        .attr('r', (d) => d.kind === 'center' ? 16 : d.kind === 'recommended' ? 8 : 10)
+        .attr('fill', (d) => {
+          if (d.kind === 'center') return d.color || '#7b61ff';
+          if (d.kind === 'recommended') return '#f0c14b';
+          return '#4ea1ff';
+        })
+        .attr('stroke', (d) => d.kind === 'center' ? '#c4b5ff' : '#0b0f14')
+        .attr('stroke-width', (d) => d.kind === 'center' ? 2.5 : 1.5)
+        .attr('opacity', (d) => d.kind === 'recommended' ? 0.85 : 1);
+
+      node.append('text')
+        .text((d) => d.alias || shortPk(d.id))
+        .attr('x', 0)
+        .attr('y', (d) => d.kind === 'center' ? 28 : 20)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#c5d0e0')
+        .attr('font-size', (d) => d.kind === 'center' ? 11 : 9)
+        .attr('pointer-events', 'none');
+
+      node.on('mousemove', (event, d) => {
+        const lines = [
+          `<strong>${d.alias || shortPk(d.id)}</strong>`,
+          `kind: ${d.kind}`,
+          `id: ${shortPk(d.id)}`,
+        ];
+        if (d.capacity != null) lines.push(`capacity Σ: ${satsFmt(d.capacity)}`);
+        if (d.channelcount != null) lines.push(`channels: ${d.channelcount}`);
+        if (d.motivation) lines.push(d.motivation);
+        tooltip.innerHTML = lines.join('<br/>');
+        tooltip.style.display = 'block';
+        const rect = graphWrap.getBoundingClientRect();
+        tooltip.style.left = (event.clientX - rect.left + 12) + 'px';
+        tooltip.style.top = (event.clientY - rect.top + 12) + 'px';
+      }).on('mouseleave', () => {
+        tooltip.style.display = 'none';
+      });
+
+      simulation.on('tick', () => {
+        link
+          .attr('x1', (d) => d.source.x)
+          .attr('y1', (d) => d.source.y)
+          .attr('x2', (d) => d.target.x)
+          .attr('y2', (d) => d.target.y);
+        node.attr('transform', (d) => `translate(${d.x},${d.y})`);
+      });
+
+      // Stats line in status
+      const s = data.stats || {};
+      status.className = 'status ok';
+      status.textContent =
+        `OK — peers: ${s.peerCount ?? '—'} · channels: ${s.channelCount ?? '—'} · ` +
+        `capacity: ${satsFmt(s.totalCapacitySats)} · recommended: ${s.recommendedCount ?? 0}`;
+    }
 
     async function run() {
       const m = modes[mode];
@@ -263,12 +469,20 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
         out.textContent = JSON.stringify(data, null, 2);
-        status.className = 'status ok';
-        status.textContent = 'OK';
+        if (m.graph && data.nodes && data.links) {
+          renderEgoGraph(data);
+        } else {
+          graphWrap.classList.remove('visible');
+          legend.classList.remove('visible');
+          status.className = 'status ok';
+          status.textContent = 'OK';
+        }
       } catch (err) {
         status.className = 'status err';
         status.textContent = err.message || String(err);
         out.textContent = '';
+        graphWrap.classList.remove('visible');
+        legend.classList.remove('visible');
       } finally {
         go.disabled = false;
       }

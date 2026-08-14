@@ -1,23 +1,29 @@
 # Changelog
 
+## [1.3.0] — 2026-08-14
+
+### Added
+- **Ego-graph** (`src/ego.ts`)
+  - Local subgraph: center node + direct channel peers
+  - Optional recommended peers as separate edge kind
+  - Capacity-sorted channel selection for readable layouts
+- Client: `egoGraph(pubkey, options)`
+- API: `GET /api/ego/:pubkey?maxChannels=80&maxRecommended=8&includeRecommended=1`
+- CLI: `robtex-ln ego <pubkey> [--max-channels N] [--max-recommended N] [--no-recommended]`
+- Web UI: **Ego graph** tab with **D3 force-directed** layout
+  - Pan / zoom, drag nodes, capacity-weighted edges
+  - Center / peer / recommended styling + tooltips
+
 ## [1.2.0] — 2026-08-13
 
 ### Added
-- In-memory TTL response cache (`src/cache.ts`) — reduces free-tier rate limits
-  - Env: `CACHE_TTL_MS` (default `60000`)
-- CORS support (`CORS_ORIGIN`, default `*`)
-- API: `GET /api/tx/:txid/spends` — output spend tracking
-- API: `GET /api/block/:height` — Bitcoin block by height
-- CLI: `robtex-ln spends <txid>`
-- CLI: `robtex-ln block <height>`
-- Health: `GET /health?deep=1` pings Robtex and reports reachability + cache stats
-- UI tabs: **Channels** (per node) and **Address txs**
-
-### Changed
-- Version bumped to 1.2.0 across package, CLI, and server banner
-- Health response includes `uptime_s` and `cache` stats
+- In-memory TTL response cache (`src/cache.ts`)
+- CORS support
+- API/CLI: tx spends, block by height
+- Health `?deep=1` pings Robtex
+- UI tabs: channels, spends, address txs, block
 
 ## [1.1.0] — previous
 
-- Zod validation, CI, Docker / Render / Fly deploy configs
-- Full LN + Bitcoin explorer surface via CLI, library, and web API
+- Zod validation, CI, Docker / Render / Fly
+- Full LN + Bitcoin explorer surface

@@ -7,13 +7,14 @@
 
 Unique differentiator: combine classic Lightning node/channel intelligence with Bitcoin address & transaction enrichment from the same data source Robtex has maintained for decades.
 
-**v1.2** — response cache, CORS, spends/block endpoints, deeper health checks, expanded UI.
+**v1.3** — ego-graph (D3 force layout), response cache, CORS, spends/block endpoints.
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
 | **Node lookup** | Full Lightning node details by public key |
+| **Ego-graph** | Center node + channel peers (+ recommended) as D3 force graph |
 | **Channel lookup** | Channel info by short channel ID |
 | **Recommended peers** | Suggested peers for a given node |
 | **Recent channels** | Latest opened Lightning channels |
@@ -38,9 +39,9 @@ npm run build
 # CLI
 npm start -- --help
 
-# Web UI + API (production)
+# Web UI + API
 npm run start:web
-# → http://localhost:3847
+# → http://localhost:3847  (open Ego graph tab)
 ```
 
 ### Environment (optional)
@@ -51,59 +52,30 @@ export ROBTEX_API_KEY=your_pro_key
 export ROBTEX_RAPIDAPI_KEY=your_rapidapi_key
 export PORT=3847
 export HOST=0.0.0.0
-export CACHE_TTL_MS=60000   # response cache TTL (ms)
-export CORS_ORIGIN=*        # or a specific origin
+export CACHE_TTL_MS=60000
+export CORS_ORIGIN=*
 ```
 
 ## Deploy
 
-### Docker (local)
+### Docker
 
 ```bash
 docker build -t robtex-ln .
-docker run --rm -p 3847:3847 \
-  -e ROBTEX_API_KEY \
-  -e ROBTEX_RAPIDAPI_KEY \
-  -e CACHE_TTL_MS=60000 \
-  robtex-ln
-# → http://localhost:3847/health
+docker run --rm -p 3847:3847 -e ROBTEX_API_KEY -e ROBTEX_RAPIDAPI_KEY robtex-ln
 ```
 
-### GitHub Container Registry
+GHCR image (on push to `main`): `ghcr.io/gizzzmo/robtex-lightning-explorer`
 
-On every push to `main`, [`.github/workflows/docker.yml`](.github/workflows/docker.yml) builds and pushes:
+### Render / Fly.io
 
-`ghcr.io/gizzzmo/robtex-lightning-explorer`
-
-```bash
-docker pull ghcr.io/gizzzmo/robtex-lightning-explorer:main
-```
-
-> Packages may be private by default — set the package visibility to public in GitHub Packages if needed.
-
-### Render
-
-1. New → Blueprint → connect this repo (`render.yaml`)
-2. Or New Web Service → Docker → this repo
-3. Set `ROBTEX_API_KEY` or `ROBTEX_RAPIDAPI_KEY` (optional; free tier works with rate limits)
-4. Health check path: `/health`
-
-### Fly.io
-
-```bash
-fly launch --no-deploy   # uses fly.toml
-fly secrets set ROBTEX_API_KEY=...
-fly deploy
-```
-
-### Railway / others
-
-Use the Dockerfile. Start command: `node dist/server.js`. Port from `$PORT`.
+See `render.yaml` and `fly.toml`. Health path: `/health`.
 
 ## CLI Usage
 
 ```bash
 robtex-ln node <pubkey>
+robtex-ln ego <pubkey> --max-channels 40
 robtex-ln search ACINQ
 robtex-ln peers <pubkey>
 robtex-ln recent --count 20
@@ -120,12 +92,14 @@ robtex-ln ping
 ## Library Usage
 
 ```ts
-import { createClient, RobtexValidationError } from 'robtex-lightning-explorer';
+import { createClient, buildEgoGraph } from 'robtex-lightning-explorer';
 
 const client = createClient();
-const node = await client.lookupNode('03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f');
-const spends = await client.transactionSpends('<txid>');
-const block = await client.lookupBlock(840000);
+const graph = await client.egoGraph(
+  '03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f',
+  { maxChannels: 60, includeRecommended: true },
+);
+// graph.nodes, graph.links, graph.stats — ready for D3 / Cytoscape / etc.
 ```
 
 ## API Endpoints
@@ -133,6 +107,7 @@ const block = await client.lookupBlock(840000);
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/node/:pubkey` | Lightning node |
+| GET | `/api/ego/:pubkey` | Ego-graph (nodes + links) |
 | GET | `/api/channel/:id` | Channel |
 | GET | `/api/peers/:pubkey` | Recommended peers |
 | GET | `/api/recent?count=10` | Recent channels |
@@ -143,7 +118,13 @@ const block = await client.lookupBlock(840000);
 | GET | `/api/tx/:txid/spends` | Output spends of a tx |
 | GET | `/api/address/:address/txs` | Address transactions |
 | GET | `/api/block/:height` | Bitcoin block |
-| GET | `/health` | Health check (+ `?deep=1` pings Robtex) |
+| GET | `/health` | Health (+ `?deep=1`) |
+
+### Ego-graph query params
+
+- `maxChannels` (default 80) — largest channels first
+- `maxRecommended` (default 8)
+- `includeRecommended` (`1`/`0`, default on)
 
 ## License
 
