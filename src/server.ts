@@ -10,11 +10,10 @@ const app = express();
 const client = createClient();
 const PORT = Number(process.env.PORT) || 3847;
 const HOST = process.env.HOST || '0.0.0.0';
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 app.use(express.json());
 
-// CORS — allow browser clients / other origins to hit the API
 app.use((_req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -51,7 +50,6 @@ function asyncHandler(
   };
 }
 
-/** Cache-aware wrapper: key built from path + query. */
 async function cached<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const hit = responseCache.get<T>(key);
   if (hit !== undefined) return hit;
@@ -149,6 +147,27 @@ app.get(
     const key = `channels:${req.params.pubkey}:${limit}:${offset}`;
     const data = await cached(key, () =>
       client.channelsForNode(req.params.pubkey, limit, offset),
+    );
+    res.json(data);
+  }),
+);
+
+/** Ego-graph: center node + channel peers (+ optional recommended peers). */
+app.get(
+  '/api/ego/:pubkey',
+  asyncHandler(async (req, res) => {
+    const maxChannels = Number(req.query.maxChannels) || 80;
+    const maxRecommended = Number(req.query.maxRecommended) || 8;
+    const includeRecommended =
+      req.query.includeRecommended !== '0' &&
+      req.query.includeRecommended !== 'false';
+    const key = `ego:${req.params.pubkey}:${maxChannels}:${maxRecommended}:${includeRecommended}`;
+    const data = await cached(key, () =>
+      client.egoGraph(req.params.pubkey, {
+        maxChannels,
+        maxRecommended,
+        includeRecommended,
+      }),
     );
     res.json(data);
   }),

@@ -5,7 +5,7 @@ import { createClient } from './client.js';
 import { error, header, prettyObject, printJson } from './format.js';
 import { RobtexValidationError } from './validate.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 const program = new Command();
 
@@ -134,6 +134,27 @@ program
     await run(
       `Channels for ${pubkey.slice(0, 16)}…`,
       () => client.channelsForNode(pubkey, Number(local.limit), Number(local.offset)),
+      opts,
+    );
+  });
+
+program
+  .command('ego <pubkey>')
+  .description('Ego-graph: center node + channel peers (+ recommended peers)')
+  .option('-n, --max-channels <n>', 'Max channels (largest first)', '40')
+  .option('-r, --max-recommended <n>', 'Max recommended peers', '8')
+  .option('--no-recommended', 'Skip recommended peers overlay')
+  .action(async (pubkey, local, cmd) => {
+    const opts = cmd.optsWithGlobals();
+    const client = getClient(opts);
+    await run(
+      `Ego-graph ${pubkey.slice(0, 16)}…`,
+      () =>
+        client.egoGraph(pubkey, {
+          maxChannels: Number(local.maxChannels),
+          maxRecommended: Number(local.maxRecommended),
+          includeRecommended: local.recommended !== false,
+        }),
       opts,
     );
   });
